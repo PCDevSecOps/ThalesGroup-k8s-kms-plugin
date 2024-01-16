@@ -23,9 +23,14 @@
 
 package cmd
 
+// TODO replace github imports for :
+//   - gose
+//   - crypto11
 import (
 	"errors"
 	"fmt"
+	"github.com/thalescpl-io/k8s-kms-plugin/pkg/gose/jose"
+	"github.com/thalescpl-io/k8s-kms-plugin/pkg/crypto11"
 	"io/ioutil"
 	"net"
 	"os"
@@ -38,7 +43,6 @@ import (
 	"github.com/thalescpl-io/k8s-kms-plugin/apis/istio/v1"
 	k8s "github.com/thalescpl-io/k8s-kms-plugin/apis/k8s/v1beta1"
 
-	"github.com/ThalesIgnite/crypto11"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/thalescpl-io/k8s-kms-plugin/pkg/providers"
@@ -64,7 +68,30 @@ var (
 	nativePath        string
 	enableTCP         bool
 	disableSocket     bool
+	algorithm         string
 )
+
+// Algorithm supports user input for configuration
+type Algorithm struct {
+	slug string
+}
+
+var (
+	UNKNOWNALG = Algorithm{""}
+	AESGCM = Algorithm{"aes-gcm"}
+	AESCBC = Algorithm{"aes-cbc"}
+)
+
+func algFromString (s string) (jose.Alg, error) {
+	switch s {
+	case AESGCM.slug:
+		return jose.AlgA256GCM, nil
+	case AESCBC.slug:
+		return jose.AlgA256CBC, nil
+	default:
+		return "", jose.ErrUnsupportedAlgType
+	}
+}
 
 // serveCmd represents the serve command
 var serveCmd = &cobra.Command{
@@ -162,26 +189,33 @@ func init() {
 	serveCmd.Flags().StringVar(&serverTLSCert, "tls-certificate", "certs/tls.crt", "TLS server cert")
 
 	serveCmd.Flags().BoolVar(&allowAny, "allow-any", false, "Allow any device (accepts all ids/secrets)")
+
+	serveCmd.Flags().StringVar(&algorithm, "algorithm", "aes-gcm", "Set the algorithm for encryption/decryption (accepts: aes-gcm, aes-cbc) (default: aes-gcm)")
 }
 
 func initProvider() (p providers.Provider, err error) {
+	// init the algorithm to use in the kms from user input
+	alg, err := algFromString(algorithm); if err != nil {
+		return
+	}
+
+	// init the provider config from user input
+	config := &crypto11.Config{}
+	if p11label != "" {
+		config.TokenLabel = p11label
+	} else {
+		config.SlotNumber = &p11slot
+	}
 	switch provider {
 	case "p11", "softhsm":
-		config := &crypto11.Config{
+		config = &crypto11.Config{
 			Path:            p11lib,
 			Pin:             p11pin,
 			UseGCMIVFromHSM: false,
 		}
-		if p11label != "" {
-			config.TokenLabel = p11label
-		} else {
-			config.SlotNumber = &p11slot
-		}
-		if p, err = providers.NewP11(config, createKey, defaultDekKeyName); err != nil {
-			return
-		}
+
 	case "luna", "dpod":
-		config := &crypto11.Config{
+		config = &crypto11.Config{
 			Path:            p11lib,
 			Pin:             p11pin,
 			UseGCMIVFromHSM: true,
@@ -190,16 +224,13 @@ func initProvider() (p providers.Provider, err error) {
 				SupplyIvForHSMGCMDecrypt: true,
 			},
 		}
-		if p11label != "" {
-			config.TokenLabel = p11label
-		} else {
-			config.SlotNumber = &p11slot
-		}
-		if p, err = providers.NewP11(config, createKey, defaultDekKeyName); err != nil {
-			return
-		}
 	default:
 		err = errors.New("unknown provider")
+		return
+	}
+
+	// init the provider
+	if p, err = providers.NewP11(config, createKey, defaultDekKeyName, jose.Alg(alg)); err != nil {
 		return
 	}
 	return

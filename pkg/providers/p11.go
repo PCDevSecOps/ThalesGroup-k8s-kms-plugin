@@ -168,9 +168,10 @@ type P11 struct {
 	decryptors         map[string]gose.JweDecryptor
 	createKey          bool
 	k8sDefaultDekLabel string
+	algorithm string
 }
 
-func NewP11(config *crypto11.Config, createKey bool, k8sKekLabel string) (p *P11, err error) {
+func NewP11(config *crypto11.Config, createKey bool, k8sKekLabel string, algorithm jose.Alg) (p *P11, err error) {
 	p = &P11{
 		config:             config,
 		createKey:          createKey,
@@ -327,7 +328,7 @@ func (p *P11) AuthenticatedEncrypt(ctx context.Context, request *istio.Authentic
 	return
 }
 
-//Close the key manager
+// Close the key manager
 func (p *P11) Close() (err error) {
 	p.encryptors = nil
 	p.decryptors = nil
@@ -387,6 +388,24 @@ func (p *P11) Encrypt(ctx context.Context, req *k8s.EncryptRequest) (resp *k8s.E
 		if defaultK8sDekKey, err = p.ctx.FindKey([]byte(req.KeyId), nil); nil != err {
 			return
 		}
+
+		// TODO :
+		//   1. AES-CBC encryption
+		//   2. HMAC verification
+		//   ---
+		//   CRYPTO11 (go lib)
+		//   call the method 'NewCBC()' from aead.
+		//   !!! This is not an aead supported algorithm, but the function is
+		//   implemented in this go file ¯\_(ツ)_/¯
+		//   This will retrieve the AES key in TPM
+		//   It seems to be not a critical step at this point ... should also work with aead (?)
+		//   ---
+		//   GOSE (go lib)
+		//   implement NewAesCBCCryptor() function
+		//   Add jose.AlgA256CBC in config
+		//   Then implement the HMAC method
+		//   maybe check Jose (Java lib) for an example ?
+
 		var aead cipher.AEAD
 		if aead, err = defaultK8sDekKey.NewGCM(); err != nil {
 			return

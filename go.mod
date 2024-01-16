@@ -2,14 +2,18 @@ module github.com/thalescpl-io/k8s-kms-plugin
 
 go 1.15
 
+// TODO replace packages :
+//   - gose
+//   - crypto11
 require (
-	github.com/ThalesIgnite/crypto11 v1.2.3
-	github.com/ThalesIgnite/gose v0.8.5
+	//github.com/ThalesIgnite/crypto11 v1.2.3
+	//github.com/ThalesIgnite/gose v0.8.5
 	github.com/golang/protobuf v1.4.2
 	github.com/google/uuid v1.1.2
 	github.com/grpc-ecosystem/grpc-gateway v1.15.2
 	github.com/infobloxopen/atlas-app-toolkit v0.22.1
 	github.com/keepeye/logrus-filename v0.0.0-20190711075016-ce01a4391dd1
+	github.com/miekg/pkcs11 v1.0.3-0.20190429190417-a667d056470f
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mitchellh/protoc-gen-go-json v0.0.0-20200917194518-364b693410ae
 	github.com/sirupsen/logrus v1.7.0
