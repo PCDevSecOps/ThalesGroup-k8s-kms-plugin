@@ -73,6 +73,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/ThalesIgnite/gose v0.8.7 => ./pkg/gose
+replace github.com/ThalesIgnite/gose v0.8.7 => github.com/IceManGreen/gose v0.0.0-20210519194136-6d77caabfe3c
 
-replace github.com/ThalesIgnite/crypto11 v1.2.3 => ./pkg/crypto11
+replace github.com/ThalesIgnite/crypto11 v1.2.3 => github.com/IceManGreen/crypto11 v0.0.0-20210909225015-a81014c7c410
