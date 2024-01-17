@@ -14,6 +14,7 @@ import (
 	"github.com/ThalesIgnite/crypto11"
 	"github.com/ThalesIgnite/gose"
 	"github.com/ThalesIgnite/gose/jose"
+
 	"github.com/google/uuid"
 	"github.com/miekg/pkcs11"
 	"github.com/sirupsen/logrus"

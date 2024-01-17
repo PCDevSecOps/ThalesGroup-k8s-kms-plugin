@@ -29,8 +29,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"github.com/thalescpl-io/k8s-kms-plugin/pkg/gose/jose"
-	"github.com/thalescpl-io/k8s-kms-plugin/pkg/crypto11"
+	"github.com/ThalesIgnite/crypto11"
+	"github.com/ThalesIgnite/gose/jose"
 	"io/ioutil"
 	"net"
 	"os"
@@ -201,11 +201,6 @@ func initProvider() (p providers.Provider, err error) {
 
 	// init the provider config from user input
 	config := &crypto11.Config{}
-	if p11label != "" {
-		config.TokenLabel = p11label
-	} else {
-		config.SlotNumber = &p11slot
-	}
 	switch provider {
 	case "p11", "softhsm":
 		config = &crypto11.Config{
@@ -229,6 +224,11 @@ func initProvider() (p providers.Provider, err error) {
 		return
 	}
 
+	if p11label != "" {
+		config.TokenLabel = p11label
+	} else {
+		config.SlotNumber = &p11slot
+	}
 	// init the provider
 	if p, err = providers.NewP11(config, createKey, defaultDekKeyName, jose.Alg(alg)); err != nil {
 		return
