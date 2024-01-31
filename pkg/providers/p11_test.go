@@ -7,14 +7,13 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"github.com/ThalesIgnite/crypto11"
-	"github.com/ThalesIgnite/gose"
-	"github.com/ThalesIgnite/gose/jose"
+	"github.com/ThalesGroup/crypto11"
+	"github.com/ThalesGroup/gose"
+	"github.com/ThalesGroup/gose/jose"
+	"github.com/ThalesGroup/k8s-kms-plugin/apis/istio/v1"
+	v1 "github.com/ThalesGroup/k8s-kms-plugin/apis/kms/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/thalescpl-io/k8s-kms-plugin/apis/istio/v1"
-	"github.com/thalescpl-io/k8s-kms-plugin/apis/k8s/v1beta1"
-	v1 "github.com/thalescpl-io/k8s-kms-plugin/apis/kms/v1"
 	"io"
 	"os"
 	"reflect"
@@ -438,10 +437,10 @@ func setupSoftHSMTestCase(t testing.TB) func(t testing.TB) {
 	}
 	testPlainMessage = []byte("Hello World, I'm a DEK, Secret, or something sensitive")
 	testEncryptor = map[string]gose.JweEncryptor{}
-	testEncryptor[string(testKid)] = gose.NewJweDirectEncryptorImpl(taead)
+	testEncryptor[string(testKid)] = gose.NewJweDirectEncryptorAuthenticated(taead)
 	testDecryptor = map[string]gose.JweDecryptor{}
 	testDecryptor[string(testKid)] = gose.NewJweDirectDecryptorImpl([]gose.AuthenticatedEncryptionKey{taead})
-	testEncryptedBlob, err = gose.NewJweDirectEncryptorImpl(taead).Encrypt(testPlainMessage, nil)
+	testEncryptedBlob, err = gose.NewJweDirectEncryptorAuthenticated(taead).Encrypt(testPlainMessage, nil)
 	// Create the default key just so we can do some practical encrypt decrypting without having to mock..
 	if _, err = generateKEK(testCtx, testKid, []byte(defaultKEKlabel), jose.AlgA256GCM); err != nil {
 		t.Fatal(err)

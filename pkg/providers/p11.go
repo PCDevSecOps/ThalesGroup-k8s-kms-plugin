@@ -11,16 +11,14 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/ThalesIgnite/crypto11"
-	"github.com/ThalesIgnite/gose"
-	"github.com/ThalesIgnite/gose/jose"
+	"github.com/ThalesGroup/crypto11"
+	"github.com/ThalesGroup/gose"
+	"github.com/ThalesGroup/gose/jose"
 
+	k8s "github.com/ThalesGroup/k8s-kms-plugin/apis/k8s/v1beta1"
 	"github.com/google/uuid"
 	"github.com/miekg/pkcs11"
 	"github.com/sirupsen/logrus"
-	"github.com/thalescpl-io/k8s-kms-plugin/apis/istio/v1"
-	k8s "github.com/thalescpl-io/k8s-kms-plugin/apis/k8s/v1beta1"
-	"github.com/thalescpl-io/k8s-kms-plugin/apis/kms/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -169,7 +167,7 @@ type P11 struct {
 	decryptors         map[string]gose.JweDecryptor
 	createKey          bool
 	k8sDefaultDekLabel string
-	algorithm string
+	algorithm          jose.Alg
 }
 
 func NewP11(config *crypto11.Config, createKey bool, k8sKekLabel string, algorithm jose.Alg) (p *P11, err error) {
@@ -177,6 +175,7 @@ func NewP11(config *crypto11.Config, createKey bool, k8sKekLabel string, algorit
 		config:             config,
 		createKey:          createKey,
 		k8sDefaultDekLabel: k8sKekLabel,
+		algorithm:          algorithm,
 	}
 	// Bootstrap the Pkcs11 device or die
 	if p.ctx, err = crypto11.Configure(p.config); err != nil {
@@ -281,7 +280,7 @@ func (p *P11) loadKEKbyID(ctx *crypto11.Context, kekIdentity, label []byte) (enc
 		return
 	}
 	decryptor = gose.NewJweDirectDecryptorImpl([]gose.AuthenticatedEncryptionKey{aek})
-	encryptor = gose.NewJweDirectEncryptorImpl(aek, p.config.UseGCMIVFromHSM)
+	encryptor = gose.NewJweDirectEncryptorAuthenticated(aek, p.config.UseGCMIVFromHSM)
 
 	return
 }
@@ -318,7 +317,7 @@ func (p *P11) AuthenticatedEncrypt(ctx context.Context, request *istio.Authentic
 	}
 
 	var dekAeadEncryptor gose.JweEncryptor
-	dekAeadEncryptor = gose.NewJweDirectEncryptorImpl(dekAead, false)
+	dekAeadEncryptor = gose.NewJweDirectEncryptorAuthenticated(dekAead, false)
 
 	resp = &istio.AuthenticatedEncryptResponse{}
 	var ct string
@@ -385,46 +384,53 @@ func (p *P11) Encrypt(ctx context.Context, req *k8s.EncryptRequest) (resp *k8s.E
 
 	// req.KeyId populated by interceptor
 	if encryptor = p.encryptors[req.KeyId]; encryptor == nil {
-		var defaultK8sDekKey *crypto11.SecretKey
-		if defaultK8sDekKey, err = p.ctx.FindKey([]byte(req.KeyId), nil); nil != err {
+		// Find the KEK in the KMS
+		var kek *crypto11.SecretKey
+		if kek, err = p.ctx.FindKey([]byte(req.KeyId), nil); nil != err {
 			return
 		}
-
-		// TODO :
-		//   1. AES-CBC encryption
-		//   2. HMAC verification
-		//   ---
-		//   CRYPTO11 (go lib)
-		//   call the method 'NewCBC()' from aead.
-		//   !!! This is not an aead supported algorithm, but the function is
-		//   implemented in this go file ¯\_(ツ)_/¯
-		//   This will retrieve the AES key in TPM
-		//   It seems to be not a critical step at this point ... should also work with aead (?)
-		//   ---
-		//   GOSE (go lib)
-		//   implement NewAesCBCCryptor() function
-		//   Add jose.AlgA256CBC in config
-		//   Then implement the HMAC method
-		//   maybe check Jose (Java lib) for an example ?
-
-		var aead cipher.AEAD
-		if aead, err = defaultK8sDekKey.NewGCM(); err != nil {
-			return
-		}
-		var aek gose.AuthenticatedEncryptionKey
+		// Random source
 		var rng io.Reader
 		if rng, err = p.ctx.NewRandomReader(); err != nil {
 			logrus.Error(err)
 			return
 		}
-		if aek, err = gose.NewAesGcmCryptor(aead, rng, p.k8sDefaultDekLabel, jose.AlgA256GCM, kekKeyOps); err != nil {
-			return
+		// Select algorithm
+		switch p.algorithm {
+		case jose.AlgA256GCM:
+			var aead cipher.AEAD
+			if aead, err = kek.NewGCM(); err != nil {
+				return
+			}
+			var aek gose.AuthenticatedEncryptionKey
+			if aek, err = gose.NewAesGcmCryptor(aead, rng, p.k8sDefaultDekLabel, jose.AlgA256GCM, kekKeyOps); err != nil {
+				return
+			}
+			encryptor = gose.NewJweDirectEncryptorAuthenticated(aek, p.config.UseGCMIVFromHSM)
+		case jose.AlgA256CBC:
+			// generate the IV from the KMS
+			iv := make([]byte, 16)
+			if _, err = rng.Read(iv); err != nil {
+				return
+			}
+			// Initialize the block mode for encryption/decryption
+			var blockMode cipher.BlockMode
+			if blockMode, err = kek.NewCBCEncrypter(true, iv); err != nil {
+				return
+			}
+			var bmek gose.BlockModeEncryptionKey
+			if bmek, err = gose.NewAesCbcCryptor(blockMode, rng, p.k8sDefaultDekLabel, jose.AlgA256CBC, kekKeyOps); err != nil {
+				return
+			}
+			encryptor = gose.NewJweDirectEncryptorBlockMode(bmek, true)
+		default:
+			print("not supported")
 		}
-		encryptor = gose.NewJweDirectEncryptorImpl(aek, p.config.UseGCMIVFromHSM)
 	}
 
 	var out string
-	if out, err = encryptor.Encrypt(req.Plain, nil); err != nil {
+	test := append(req.Plain, []byte("pingpingpingp")...)
+	if out, err = encryptor.Encrypt(test, nil); err != nil {
 		return
 	}
 	resp = &k8s.EncryptResponse{
@@ -508,7 +514,7 @@ func (p *P11) GenerateSKey(ctx context.Context, request *istio.GenerateSKeyReque
 	if aead, err = gose.NewAesGcmCryptorFromJwk(jwk, kekKeyOps); err != nil {
 		return
 	}
-	dekEncryptor := gose.NewJweDirectEncryptorImpl(aead, false)
+	dekEncryptor := gose.NewJweDirectEncryptorAuthenticated(aead, false)
 
 	var wrappedSKey []byte
 	if wrappedSKey, err = generateSKey(p.ctx, request, dekEncryptor); err != nil {

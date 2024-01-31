@@ -29,8 +29,9 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"github.com/ThalesIgnite/crypto11"
-	"github.com/ThalesIgnite/gose/jose"
+	"github.com/ThalesGroup/crypto11"
+	"github.com/ThalesGroup/gose"
+	"github.com/ThalesGroup/gose/jose"
 	"io/ioutil"
 	"net"
 	"os"
@@ -40,12 +41,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thalescpl-io/k8s-kms-plugin/apis/istio/v1"
-	k8s "github.com/thalescpl-io/k8s-kms-plugin/apis/k8s/v1beta1"
+	k8s "github.com/ThalesGroup/k8s-kms-plugin/apis/k8s/v1beta1"
 
+	"github.com/ThalesGroup/k8s-kms-plugin/pkg/providers"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/thalescpl-io/k8s-kms-plugin/pkg/providers"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -78,18 +78,18 @@ type Algorithm struct {
 
 var (
 	UNKNOWNALG = Algorithm{""}
-	AESGCM = Algorithm{"aes-gcm"}
-	AESCBC = Algorithm{"aes-cbc"}
+	AESGCM     = Algorithm{"aes-gcm"}
+	AESCBC     = Algorithm{"aes-cbc"}
 )
 
-func algFromString (s string) (jose.Alg, error) {
+func algFromString(s string) (jose.Alg, error) {
 	switch s {
 	case AESGCM.slug:
 		return jose.AlgA256GCM, nil
 	case AESCBC.slug:
 		return jose.AlgA256CBC, nil
 	default:
-		return "", jose.ErrUnsupportedAlgType
+		return "", gose.ErrInvalidAlgorithm
 	}
 }
 
@@ -190,12 +190,13 @@ func init() {
 
 	serveCmd.Flags().BoolVar(&allowAny, "allow-any", false, "Allow any device (accepts all ids/secrets)")
 
-	serveCmd.Flags().StringVar(&algorithm, "algorithm", "aes-gcm", "Set the algorithm for encryption/decryption (accepts: aes-gcm, aes-cbc) (default: aes-gcm)")
+	serveCmd.Flags().StringVar(&algorithm, "algorithm", "aes-gcm", "Set the algorithm for encryption/decryption (accepts: aes-gcm, aes-cbc)")
 }
 
 func initProvider() (p providers.Provider, err error) {
 	// init the algorithm to use in the kms from user input
-	alg, err := algFromString(algorithm); if err != nil {
+	alg, err := algFromString(algorithm)
+	if err != nil {
 		return
 	}
 
@@ -230,7 +231,7 @@ func initProvider() (p providers.Provider, err error) {
 		config.SlotNumber = &p11slot
 	}
 	// init the provider
-	if p, err = providers.NewP11(config, createKey, defaultDekKeyName, jose.Alg(alg)); err != nil {
+	if p, err = providers.NewP11(config, createKey, defaultDekKeyName, alg); err != nil {
 		return
 	}
 	return

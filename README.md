@@ -19,6 +19,7 @@ Locally you should install [skaffold.dev](https://skaffold.dev) tooling as well 
 - Get a k8s cluster to deploy the `k8s-kms-plugin`
 - Install skaffold.dev  [skaffold.dev](https://skaffold.dev) 
 - Running `skaffold dev` or `make dev` should put the  stack into a local deployment pipeline of the plugin being tested as a KMS gRPC server.
+
 ## Deployment scenarios
 
 This plugin is designed to be deployed in 2 configurations
@@ -42,5 +43,69 @@ The `Makefile` contains commands for easy execution:
 - `make dev` - loads project into your kubernetes cluster (minikube or GKE will work just fine), and continously builds and deploys as you develop.
 - `make build` - builds the standalone `k8s-kms-plugin` binary
 
-
 NOTE:  Currently the standalone plugin just waits for the 
+
+## Debug Environment
+
+For a remote debug, build the plugin with debug mode :
+
+```sh
+go get github.com/go-delve/delve/cmd/dlv
+make build-debug
+```
+
+### TPM2
+
+This documentation is based on a Debian12 virtual machine experiment and a software TPM.
+
+1. Install a software tpm, its dependencies
+2. Install the libraries `libtpms`, `libtpm2-pkcs11` and `tpm2-abrmd`
+3. Add your user to the group `tss` and launch the software tpm
+4. Initialize the PKCS11 store, tokens and a user pin :
+
+```sh
+export STORE="$HOME/tpm2"
+export MODULE="/usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1"
+# store
+mkdir -p $STORE
+tpm2_ptool init --path=$STORE
+# token
+pkcs11-tool --module $MODULE --slot-index 0 --init-token --label mylabel --so-pin mysopin
+# an initialized token should appears :
+pkcs11-tool --module $MODULE --list-token-slots
+# pin
+pkcs11-tool --module $MODULE --init-pin --so-pin mysopin --login --pin mypin --slot-index 0
+# test
+pkcs11-tool --module $MODULE --label mylabel --pin mypin --generate-random 16 | xxd
+```
+
+5. Create the required keys :
+
+```sh
+# aes
+tpm2_ptool addkey --algorithm aes256 --label mylabel --key-label aes0 --userpin mypin --path $STORE
+# hmac
+tpm2_ptool addkey --algorithm hmac:sha256 --label mylabel --key-label hmac0 --userpin mypin --path $STORE
+# list
+pkcs11-tool --module $MODULE --token-label mylabel --pin mypin -O
+tpm2_ptool listobjects --label mylabel --path $STORE
+```
+
+7. Create the socket's folder for the kms. The socket will be automatically created inside.  
+**WARNING: do not use `/tmp` for production environment !**
+
+```sh
+mkdir -p /tmp/run
+```
+
+8. Launch the plugin :
+
+```sh
+# local debug
+k8s-kms-plugin serve \
+  --provider p11 --p11-lib $MODULE --p11-key-label aes0 --p11-label mylabel --p11-pin mypin --algorithm aes-cbc --enable-server
+# remote debug
+dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient --check-go-version=false \
+  exec k8s-kms-plugin-dlv -- serve \
+  --provider p11 --p11-lib $MODULE --p11-key-label aes0 --p11-label mylabel --p11-pin mypin --algorithm aes-cbc --enable-server
+```

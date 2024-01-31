@@ -3,9 +3,7 @@ package providers
 import (
 	"context"
 	"errors"
-	"github.com/ThalesIgnite/gose/jose"
-	"github.com/thalescpl-io/k8s-kms-plugin/apis/istio/v1"
-	"github.com/thalescpl-io/k8s-kms-plugin/apis/k8s/v1beta1"
+	"github.com/ThalesGroup/gose/jose"
 	"google.golang.org/grpc"
 )
 

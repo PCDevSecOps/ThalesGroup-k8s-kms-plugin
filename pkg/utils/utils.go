@@ -24,7 +24,7 @@
 package utils
 
 import (
-	"github.com/ThalesIgnite/crypto11"
+	"github.com/ThalesGroup/crypto11"
 	"os"
 )
 

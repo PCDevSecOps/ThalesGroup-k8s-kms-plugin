@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/thalescpl-io/k8s-kms-plugin/apis/istio/v1"
 )
 
 var (
